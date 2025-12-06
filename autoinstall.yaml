@@ -99,4 +99,4 @@ autoinstall:
     - curtin in-target --target=/target mkdir -p /home/$AUTOINSTALL_USERNAME/Workspace || true
 
     # Reinicia após instalação
-    shutdown: reboot
+    - shutdown: reboot
