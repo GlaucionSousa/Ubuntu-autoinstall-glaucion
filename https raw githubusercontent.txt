@@ -1,0 +1,269 @@
+https://raw.githubusercontent.com/GlaucionSousa/Ubuntu-autoinstall-glaucion/refs/heads/main/autoinstall.yaml
+
+
+Particionamento para SSD de 120GB
+
+Para um SSD de 120GB e uso de desktop/desenvolvimento (com VMs, Docker e Terraform), a prioridade é a simplicidade e a velocidade. A alocação deve ser a mais direta possível.
+
+Recomendação: A melhor abordagem é usar o esquema de particionamento automático padrão do instalador do Ubuntu (Erase disk and install Ubuntu) e garantir que ele use o formato de partição LVM (Logical Volume Management) ou, preferencialmente, o formato de sistema de arquivos Btrfs para um melhor desempenho em SSDs e snapshots (se você for avançado).
+
+No entanto, se você deseja um particionamento manual e tradicional para um SSD de 120GB, a estrutura a seguir é a mais recomendada:
+Ponto de Montagem	Tamanho Recomendado	Sistema de Arquivos	Objetivo
+/boot/efi	512MB (Mínimo: 100MB)	FAT32	Necessário para sistemas UEFI modernos.
+/boot	1GB	ext4	Armazena o kernel e arquivos de inicialização (opcional se / for ext4/maior).
+Swap	4GB ou 8GB (ou arquivo swap)	linux-swap	Para hibernação ou uso de oversubscription de memória (com VMs). Se tiver 8GB ou mais de RAM física, um arquivo swap é mais flexível.
+/ (Raiz)	Restante do espaço (Aprox. 110GB)	ext4 ou Btrfs	Onde todo o sistema operacional, seus programas e a pasta /home ficarão.
+Particionamento Detalhado (Manual)
+
+    Partição 1: EFI System Partition (ESP)
+
+        Tamanho: 512MB
+
+        Tipo: FAT32
+
+        Ponto de Montagem: /boot/efi
+
+        Flags: boot, esp
+
+    Partição 2: Partição Raiz
+
+        Tamanho: Aproximadamente 110-114GB
+
+        Tipo: ext4 (Recomendado)
+
+        Ponto de Montagem: /
+
+        Consideração: Ao usar o / para tudo, você maximiza o espaço disponível para suas VMs (KVM), imagens Docker e projetos de desenvolvimento.
+
+    SWAP:
+
+        Opção 1 (Recomendada): Use o arquivo swap (padrão no Ubuntu desde 17.04). Não crie uma partição swap separada.
+
+        Opção 2 (Partição): Se precisar de hibernação ou quiser um swap dedicado, use 4GB ou 8GB (se você tiver 16GB de RAM ou menos).
+
+💡 Por que uma única partição grande (/)?
+
+Em SSDs modernos, a vantagem de desempenho de separar /home, /var, etc., é mínima ou inexistente. Separar a partição /home seria contraproducente neste caso, pois a sua carga de trabalho de DevOps (VMs, Docker, repositórios Git, etc.) consumirá muito espaço no /home/$USER. Colocar tudo em um grande / garante que o seu ambiente de desenvolvimento não fique sem espaço.
+
+Seu foco no desenvolvimento sugere que você precisa do máximo de espaço flexível para arquivos grandes (imagens de VM e Docker), e a partição única / é o caminho mais eficiente para um SSD de 120GB.
+
+Gostaria que eu detalhasse algum passo do script de pós-instalação, como a configuração do Docker ou do KVM?
+
+tenho os arquivos DEB
+
+Olá! Entendido. Se você tem os arquivos .deb dos pacotes extras e deseja incluí-los na instalação, a maneira mais robusta no seu script de pós-instalação tradicional é copiá-los para o sistema de arquivos antes de tentar instalá-los.
+
+Como o script será executado após a instalação base, você precisará de uma forma de transferir esses arquivos para a máquina.
+
+Aqui está a seção corrigida/adicionada que você pode incluir no seu script Bash de pós-instalação, considerando que os arquivos .deb estão em um pendrive ou pasta na sua máquina host (que pode ser acessível via SSH/SCP ou outro método):
+5. Instalação de Pacotes .deb Extras
+
+Para que esta seção funcione, você precisa primeiro copiar os arquivos .deb para a máquina virtual/instalada. Vamos supor que você montou um pendrive ou compartilhou a pasta extras contendo os arquivos .deb para o diretório /mnt/extras no sistema instalado.
+
+Ajuste no Script:
+Bash
+
+# ... (Seções 1 a 4 do script anterior)
+
+# --- 5. Instalação de Pacotes .deb da Pasta Extras ---
+# ATENÇÃO: É NECESSÁRIO QUE ESTES ARQUIVOS ESTEJAM PRESENTES NO CAMINHO ESPECIFICADO ANTES DE EXECUTAR O SCRIPT.
+# Por exemplo: Copie os arquivos .deb para /tmp/extras/ ou monte uma mídia externa em /mnt/extras/
+DEB_SOURCE_DIR="/mnt/extras" # Ajuste este caminho conforme onde você copiou/montou os arquivos.
+
+echo "--- 5. Instalando pacotes DEB extras do diretório $DEB_SOURCE_DIR ---" | tee -a "$LOGFILE"
+
+# Verifica se a pasta existe e contém arquivos .deb
+if [ -d "$DEB_SOURCE_DIR" ] && find "$DEB_SOURCE_DIR" -maxdepth 1 -name "*.deb" -print -quit 2>/dev/null; then
+    echo "Instalando pacotes .deb..." | tee -a "$LOGFILE"
+    
+    # Executa a instalação de todos os pacotes .deb encontrados no diretório
+    # Usa 'dpkg -i' para instalar os pacotes
+    # Usa 'apt --fix-broken install -y' para resolver dependências que possam ter sido ignoradas pelo dpkg
+    
+    # 1. Instalação inicial dos pacotes
+    dpkg -i "$DEB_SOURCE_DIR"/*.deb || true | tee -a "$LOGFILE"
+    
+    # 2. Correção de quaisquer dependências pendentes
+    apt --fix-broken install -y | tee -a "$LOGFILE"
+    
+    echo "Instalação de pacotes .deb extras concluída." | tee -a "$LOGFILE"
+else
+    echo "AVISO: Diretório $DEB_SOURCE_DIR não encontrado ou não contém arquivos .deb. Pulando esta etapa." | tee -a "$LOGFILE"
+fi
+
+# --- 6. Finalização e Limpeza (continuação do script) ---
+echo "--- 6. Finalização e Limpeza ---" | tee -a "$LOGFILE"
+apt autoremove -y | tee -a "$LOGFILE"
+
+# ... (restante do script)
+
+📋 Fluxo de Trabalho Recomendado
+
+Se você estiver instalando em uma Máquina Virtual (VM) (VirtualBox, KVM/Virt-Manager, etc.), o fluxo mais fácil é:
+
+    Instale o Ubuntu 24.04 com seu usuário glaucion.
+
+    Transfira os DEBs:
+
+        VMWare/VirtualBox: Use as "Guest Additions" ou "Ferramentas" para montar a pasta compartilhada da sua máquina host.
+
+        KVM/QEMU: Use o virt-manager para adicionar um dispositivo de sistema de arquivos ou um ISO que contenha a pasta extras.
+
+        Geral: Use scp para copiar a pasta extras para o diretório /home/glaucion/ antes de executar o script.
+
+    Ajuste a Variável: No script, ajuste a variável $DEB_SOURCE_DIR para o caminho onde os arquivos .deb estão (ex: DEB_SOURCE_DIR="/home/glaucion/extras").
+
+    Execute o Script:
+    Bash
+
+    sudo ./seu_script_de_pos_instalacao.sh
+
+crie script final completo
+
+Com certeza! Reunindo todas as correções e o tratamento para os arquivos .deb extras, aqui está o Script Final Completo de Pós-Instalação.
+
+Este script deve ser executado com sudo no seu novo sistema Ubuntu 24.04 após a instalação base.
+💻 Script de Pós-Instalação Completo (Ubuntu 24.04 LTS)
+
+Salve o conteúdo abaixo como, por exemplo, pos_instalacao.sh e execute-o com sudo bash pos_instalacao.sh.
+Bash
+
+#!/bin/bash
+# Script de Pós-Instalação Completo - Ubuntu 24.04 LTS
+# Autor: Glaucion
+# Data: Dezembro 2025
+# Uso: sudo bash pos_instalacao.sh
+
+# --- Variáveis de Configuração ---
+USERNAME="glaucion"
+HOMEDIR="/home/$USERNAME"
+LOGFILE="$HOMEDIR/pos-inst.log"
+# AJUSTE: Mude este caminho para onde você copiar ou montar seus arquivos .deb
+DEB_SOURCE_DIR="$HOMEDIR/extras" 
+
+echo "### Pós-instalação iniciada: $(date)" | tee "$LOGFILE"
+
+# --- 0. Checagem Inicial ---
+if [[ $EUID -ne 0 ]]; then
+   echo "ERRO: Este script deve ser executado com 'sudo' ou como root."
+   exit 1
+fi
+echo "Usuário alvo: $USERNAME" | tee -a "$LOGFILE"
+
+# --- 1. Atualização e Instalação de Pacotes Base (APT) ---
+echo "--- 1. Atualizando sistema e instalando pacotes base (APT) ---" | tee -a "$LOGFILE"
+
+# Atualização e Upgrade
+apt update && apt -y upgrade | tee -a "$LOGFILE"
+
+# Lista de pacotes
+PACKAGES=(
+  curl wget vim git htop tmux unzip build-essential net-tools nmap iperf3
+  traceroute mtr bridge-utils vlan wireshark tcpdump openssh-server python3-pip
+  virtualbox gparted flameshot openvpn wireguard docker.io docker-compose
+  qemu-kvm libvirt-daemon-system libvirt-clients virt-manager nodejs npm kitty
+  ansible ubuntu-restricted-extras # Adicionado codecs e drivers
+)
+
+# Instalação dos pacotes
+apt install -y "${PACKAGES[@]}" | tee -a "$LOGFILE"
+
+# --- 2. Instalação de Snaps ---
+echo "--- 2. Instalando Snaps ---" | tee -a "$LOGFILE"
+snap install spotify --channel=stable | tee -a "$LOGFILE"
+
+# --- 3. Instalação de Pacotes .deb Extras ---
+echo "--- 3. Instalando pacotes DEB extras do diretório $DEB_SOURCE_DIR ---" | tee -a "$LOGFILE"
+
+# Verifica se a pasta existe e contém arquivos .deb
+if [ -d "$DEB_SOURCE_DIR" ] && find "$DEB_SOURCE_DIR" -maxdepth 1 -name "*.deb" -print -quit 2>/dev/null; then
+    echo "Instalando pacotes .deb..." | tee -a "$LOGFILE"
+    
+    # 1. Instalação inicial dos pacotes
+    dpkg -i "$DEB_SOURCE_DIR"/*.deb || true | tee -a "$LOGFILE"
+    
+    # 2. Correção de dependências
+    apt --fix-broken install -y | tee -a "$LOGFILE"
+    
+    echo "Instalação de pacotes .deb extras concluída." | tee -a "$LOGFILE"
+else
+    echo "AVISO: Diretório $DEB_SOURCE_DIR não encontrado ou vazio. Pulando esta etapa." | tee -a "$LOGFILE"
+fi
+
+# --- 4. Comandos de Configuração e Instalações Específicas ---
+echo "--- 4. Executando comandos de configuração e instalações de terceiros ---" | tee -a "$LOGFILE"
+
+# Adiciona usuário a grupos essenciais
+usermod -aG wireshark,docker,libvirt,kvm "$USERNAME" | tee -a "$LOGFILE"
+
+# Ativar TRIM SSD
+systemctl enable fstrim.timer | tee -a "$LOGFILE"
+systemctl start fstrim.timer
+
+# Google Chrome
+echo "Instalando Google Chrome..." | tee -a "$LOGFILE"
+wget -qO /usr/share/keyrings/google-linux-signing-key.gpg https://dl.google.com/linux/linux_signing_key.pub 
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-key.gpg] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list
+apt update | tee -a "$LOGFILE"
+apt install -y google-chrome-stable | tee -a "$LOGFILE"
+
+# VS Code
+echo "Instalando VS Code..." | tee -a "$LOGFILE"
+wget -qO /usr/share/keyrings/vscode-archive-keyring.gpg https://packages.microsoft.com/keys/microsoft.asc
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/vscode-archive-keyring.gpg] https://packages.microsoft.com/repos/code stable main' > /etc/apt/sources.list.d/vscode.list
+apt update | tee -a "$LOGFILE"
+apt install -y code | tee -a "$LOGFILE"
+
+# Terraform
+echo "Instalando Terraform (v1.7.7)..." | tee -a "$LOGFILE"
+wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.7.7/terraform_1.7.7_linux_amd64.zip | tee -a "$LOGFILE"
+unzip -o /tmp/terraform.zip -d /usr/local/bin | tee -a "$LOGFILE" # '-o' para sobrescrever
+rm /tmp/terraform.zip
+
+# KVM, bridges e libvirt
+echo "Configurando KVM/Libvirt..." | tee -a "$LOGFILE"
+systemctl enable libvirtd | tee -a "$LOGFILE"
+systemctl start libvirtd
+# Habilita e inicia a rede 'default' (se não estiver ativa)
+virsh net-start default || true | tee -a "$LOGFILE"
+virsh net-autostart default || true | tee -a "$LOGFILE"
+
+# Criação de workspace e permissões
+echo "Criando diretório Workspace..." | tee -a "$LOGFILE"
+mkdir -p "$HOMEDIR/Workspace" | tee -a "$LOGFILE"
+chown -R "$USERNAME:$USERNAME" "$HOMEDIR" | tee -a "$LOGFILE"
+
+# --- 5. Finalização e Reboot ---
+echo "--- 5. Finalização e Limpeza ---" | tee -a "$LOGFILE"
+apt autoremove -y | tee -a "$LOGFILE"
+apt clean | tee -a "$LOGFILE"
+
+echo "### Pós-instalação finalizada. Necessário REINICIAR para aplicar permissões de grupo (docker, libvirt, wireshark)." | tee -a "$LOGFILE"
+echo "### Log completo disponível em $LOGFILE"
+
+# Pergunta se deseja reiniciar
+read -p "Deseja reiniciar o sistema agora para aplicar todas as mudanças (S/n)? " choice
+choice=${choice:-S} # 'S' é o default
+case "$choice" in
+  s|S ) reboot;;
+  * ) echo "Reinicie o sistema manualmente em breve.";;
+esac
+
+⚠️ Instruções para Uso
+
+    Crie a pasta de extras: Antes de rodar o script, crie a pasta e coloque seus arquivos .deb nela:
+    Bash
+
+mkdir /home/glaucion/extras
+# Copie seus .deb para esta pasta
+
+Salve o Script: Salve o código acima como pos_instalacao.sh em qualquer lugar, por exemplo, no diretório /home/glaucion/.
+
+Execute:
+Bash
+
+    sudo bash pos_instalacao.sh
+
+    Reinicie: O script perguntará se você deseja reiniciar. O reboot é crucial para que o usuário glaucion passe a fazer parte dos grupos docker, libvirt, e wireshark, garantindo que você possa usar o Docker e o KVM sem precisar de sudo (após o login).
+
+Este script agora cobre todos os requisitos do seu YAML de forma robusta e sequencial em um ambiente de pós-instalação tradicional.
