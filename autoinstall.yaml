@@ -1,26 +1,19 @@
 #cloud-config
 autoinstall:
   version: 1
-
   identity:
     hostname: ubuntu-desktop
     username: glaucion
     realname: "Glaucion Sousa"
     password: "$6$8e4ep2Kll31AoIaE$zDgeHI/c4tyIGtKxD1fyk8btXivOlRd7icPcDrcK2ECx.HwHal51v7Lmi4OYml4sEAPC1Ekd7RmIe7TPErJev0"
-
   locale: pt_BR.UTF-8
   keyboard:
     layout: br
-
   timezone: America/Recife
-
   ssh:
     install-server: true
     authorized-keys:
       - "ssh-ed25519 SUA_CHAVE_SSH_AQUI"
-
-  updates: all
-
   packages:
     - curl
     - wget
@@ -41,6 +34,7 @@ autoinstall:
     - tcpdump
     - openssh-server
     - python3-pip
+    - virtualbox
     - gparted
     - flameshot
     - openvpn
@@ -51,61 +45,58 @@ autoinstall:
     - libvirt-daemon-system
     - libvirt-clients
     - virt-manager
+    - nodejs
+    - npm
     - kitty
-
-    # Estes NÃO existem via apt por defeito no 24.04:
-    # - virtualbox
-    # - nodejs
-    # - npm
-
   snaps:
     - name: spotify
       channel: stable
-
+      classic: false
   codecs:
     install: true
-
   drivers:
     install: true
+  updates: all
 
   late-commands:
-    - "echo '### Pós-instalação iniciada' > /target/root/pos-inst.log"
+    # Logs de pós-instalação
+    - "echo '### Pós-instalação iniciada' > /target/root/pos-inst.log || true"
 
-    # Atualização
-    - curtin in-target --target=/target apt update
-    - curtin in-target --target=/target apt -y upgrade
+    # Atualização geral
+    - curtin in-target --target=/target apt update || true
+    - curtin in-target --target=/target apt -y upgrade || true
 
-    # Adicionar utilizador a grupos
-    - curtin in-target --target=/target usermod -aG wireshark,docker glaucion
+    # Adiciona usuário a grupos
+    - curtin in-target --target=/target usermod -aG wireshark,docker $AUTOINSTALL_USERNAME || true
 
-    # TRIM
-    - curtin in-target --target=/target systemctl enable fstrim.timer
+    # Ativar TRIM SSD
+    - curtin in-target --target=/target systemctl enable fstrim.timer || true
 
     # Google Chrome
-    - curtin in-target --target=/target bash -c "wget -qO /usr/share/keyrings/google-key.gpg https://dl.google.com/linux/linux_signing_key.pub"
-    - curtin in-target --target=/target bash -c "echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/google-key.gpg] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list"
-    - curtin in-target --target=/target apt update
-    - curtin in-target --target=/target apt install -y google-chrome-stable
+    - curtin in-target --target=/target bash -c "wget -qO /usr/share/keyrings/google-linux-signing-key.gpg https://dl.google.com/linux/linux_signing_key.pub || true"
+    - curtin in-target --target=/target bash -c "echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-key.gpg] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list || true"
+    - curtin in-target --target=/target apt update || true
+    - curtin in-target --target=/target apt install -y google-chrome-stable || true
 
     # VS Code
-    - curtin in-target --target=/target bash -c "wget -qO /usr/share/keyrings/vscode.gpg https://packages.microsoft.com/keys/microsoft.asc"
-    - curtin in-target --target=/target bash -c "echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/vscode.gpg] https://packages.microsoft.com/repos/code stable main' > /etc/apt/sources.list.d/vscode.list"
-    - curtin in-target --target=/target apt update
-    - curtin in-target --target=/target apt install -y code
+    - curtin in-target --target=/target bash -c "wget -qO /usr/share/keyrings/vscode-archive-keyring.gpg https://packages.microsoft.com/keys/microsoft.asc || true"
+    - curtin in-target --target=/target bash -c "echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/vscode-archive-keyring.gpg] https://packages.microsoft.com/repos/code stable main' > /etc/apt/sources.list.d/vscode.list || true"
+    - curtin in-target --target=/target apt update || true
+    - curtin in-target --target=/target apt install -y code || true
 
-    # Ansible e Terraform
-    - curtin in-target --target=/target apt install -y ansible
-    - curtin in-target --target=/target bash -c "wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.7.7/terraform_1.7.7_linux_amd64.zip && unzip /tmp/terraform.zip -d /usr/local/bin"
+    # DevOps: Ansible + Terraform
+    - curtin in-target --target=/target apt install -y ansible || true
+    - curtin in-target --target=/target bash -c "wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.7.7/terraform_1.7.7_linux_amd64.zip && unzip /tmp/terraform.zip -d /usr/local/bin" || true
 
-    # KVM e libvirt
-    - curtin in-target --target=/target systemctl enable libvirtd
-    - curtin in-target --target=/target bash -c "virsh net-start default || true && virsh net-autostart default || true"
+    # KVM, bridges e libvirt
+    - curtin in-target --target=/target systemctl enable libvirtd || true
+    - curtin in-target --target=/target bash -c "virsh net-start default || true && virsh net-autostart default || true" 
 
-    # Instalar .deb da pasta extras/
+    # Instala todos os pacotes .deb da pasta extras/
     - curtin in-target --target=/target bash -c "for pkg in /cdrom/extras/*.deb; do dpkg -i \$pkg || true; done"
 
-    # Workspace
-    - curtin in-target --target=/target mkdir -p /home/glaucion/Workspace
-    - curtin in-target --target=/target chown -R glaucion:glaucion /home/glaucion/Workspace
+    # Criação de workspace
+    - curtin in-target --target=/target mkdir -p /home/$AUTOINSTALL_USERNAME/Workspace || true
 
-  shutdown: reboot
+    # Reinicia após instalação
+    shutdown: reboot
